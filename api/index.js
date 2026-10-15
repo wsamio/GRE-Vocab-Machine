@@ -1,17 +1,11 @@
 import express from 'express';
 import { MongoClient, ObjectId } from 'mongodb';
 import dotenv from 'dotenv';
-import path from 'path';
-import { fileURLToPath } from 'url';
 
 dotenv.config();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 const app = express();
 
-// Middleware
 app.use(express.json());
 
 // Built-in CORS headers
@@ -25,44 +19,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Explicit static asset handlers
-app.get('/style.css', (req, res) => {
-  res.sendFile(path.join(__dirname, 'style.css'));
-});
-
-app.get('/script.js', (req, res) => {
-  res.sendFile(path.join(__dirname, 'script.js'));
-});
-
-app.get('/vocabulary.csv', (req, res) => {
-  res.sendFile(path.join(__dirname, 'vocabulary.csv'));
-});
-
-app.get('/dictionary.csv', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dictionary.csv'));
-});
-
-// Serve any other root static files
-app.use(express.static(__dirname));
-
-// HTML Page Routes
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-app.get('/dashboard', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dashboard.html'));
-});
-
-app.get('/game', (req, res) => {
-  res.sendFile(path.join(__dirname, 'game.html'));
-});
-
-app.get('/review', (req, res) => {
-  res.sendFile(path.join(__dirname, 'review.html'));
-});
-
-// MongoDB Connection with Caching
+// MongoDB Connection Caching for Serverless
 const uri = process.env.MONGODB_URI;
 let cachedClient = null;
 let cachedDb = null;
@@ -86,8 +43,8 @@ async function getDatabase() {
   return cachedDb;
 }
 
-// Middleware for DB connection on /api requests
-app.use('/api', async (req, res, next) => {
+// Database injection middleware
+app.use(async (req, res, next) => {
   try {
     req.db = await getDatabase();
     next();
@@ -188,6 +145,7 @@ app.get('/api/dictionary', async (req, res) => {
   }
 });
 
+// Local development fallback
 const PORT = process.env.PORT || 3000;
 if (!process.env.VERCEL) {
   app.listen(PORT, () => {
