@@ -1,6 +1,5 @@
 import express from 'express';
 import { MongoClient, ObjectId } from 'mongodb';
-import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -13,8 +12,18 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 // Middleware
-app.use(cors());
 app.use(express.json());
+
+// Built-in CORS headers (No external package required)
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
 
 // Serve static frontend files (index.html, style.css, script.js, etc.)
 app.use(express.static(__dirname));
@@ -163,7 +172,7 @@ app.get('/api/dictionary', async (req, res) => {
   }
 });
 
-// Start local server (if run with "node server.js")
+// Start local server (if run locally with node server.js)
 const PORT = process.env.PORT || 3000;
 if (!process.env.VERCEL) {
   app.listen(PORT, () => {
