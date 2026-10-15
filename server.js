@@ -14,7 +14,7 @@ const app = express();
 // Middleware
 app.use(express.json());
 
-// Built-in CORS headers (No external package required)
+// Built-in CORS headers
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -25,15 +25,31 @@ app.use((req, res, next) => {
   next();
 });
 
-// Serve static frontend files (index.html, style.css, script.js, etc.)
+// Explicit static asset handlers
+app.get('/style.css', (req, res) => {
+  res.sendFile(path.join(__dirname, 'style.css'));
+});
+
+app.get('/script.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'script.js'));
+});
+
+app.get('/vocabulary.csv', (req, res) => {
+  res.sendFile(path.join(__dirname, 'vocabulary.csv'));
+});
+
+app.get('/dictionary.csv', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dictionary.csv'));
+});
+
+// Serve any other root static files
 app.use(express.static(__dirname));
 
-// Explicit route for Root (Fixes "Cannot GET /")
+// HTML Page Routes
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Explicit routes for secondary HTML pages
 app.get('/dashboard', (req, res) => {
   res.sendFile(path.join(__dirname, 'dashboard.html'));
 });
@@ -46,7 +62,7 @@ app.get('/review', (req, res) => {
   res.sendFile(path.join(__dirname, 'review.html'));
 });
 
-// MongoDB Connection with Caching for Serverless
+// MongoDB Connection with Caching
 const uri = process.env.MONGODB_URI;
 let cachedClient = null;
 let cachedDb = null;
@@ -70,7 +86,7 @@ async function getDatabase() {
   return cachedDb;
 }
 
-// Middleware to connect to DB only when an API route is called
+// Middleware for DB connection on /api requests
 app.use('/api', async (req, res, next) => {
   try {
     req.db = await getDatabase();
@@ -172,7 +188,6 @@ app.get('/api/dictionary', async (req, res) => {
   }
 });
 
-// Start local server (if run locally with node server.js)
 const PORT = process.env.PORT || 3000;
 if (!process.env.VERCEL) {
   app.listen(PORT, () => {
@@ -180,5 +195,4 @@ if (!process.env.VERCEL) {
   });
 }
 
-// Export default app for Vercel Serverless
 export default app;
