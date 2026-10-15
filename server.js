@@ -24,7 +24,8 @@ if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
   process.exit(1);
 }
 
-const client = new MongoClient(MONGODB_URI);
+const IS_VERCEL = Boolean(process.env.VERCEL);
+const client = new MongoClient(MONGODB_URI, { maxPoolSize: IS_VERCEL ? 5 : 10, serverSelectionTimeoutMS: 8000 });
 await client.connect();
 const db = client.db(DB_NAME);
 const users = db.collection('users');
@@ -38,6 +39,7 @@ await Promise.all([
   progress.createIndex({ userId: 1, status: 1 }),
   progress.createIndex({ userId: 1, updatedAt: -1 }),
   games.createIndex({ userId: 1, completedAt: -1 }),
+  words.createIndex({ wordId: 1 }, { unique: true }),
   words.createIndex({ dayNumber: 1, order: 1 }),
   words.createIndex({ wordLower: 1 }, { unique: true })
 ]);
@@ -126,7 +128,8 @@ async function importRows(rows) {
   for (let i = 0; i < docs.length; i += 500) await words.insertMany(docs.slice(i, i + 500), { ordered: false });
   console.log(`Imported ${docs.length} dictionary words.`);
 }
-await ensureDictionary();
+// On Vercel the dictionary must be imported once from your computer (npm run import:dictionary).
+if (!IS_VERCEL) await ensureDictionary();
 
 app.get('/api/health', async (_req, res) => {
   try { await db.command({ ping: 1 }); res.json({ ok: true, dictionaryCount: await words.countDocuments() }); }
@@ -282,20 +285,16 @@ app.post('/api/game/finish', requireAuth, gameLimiter, async (req, res) => {
   res.json({ score, correct, totalQuestions, accuracy, durationSeconds });
 });
 
-app.use(express.static(__dirname, { extensions: ['html'], index: 'index.html', dotfiles: 'ignore' }));
+app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'], index: 'index.html', dotfiles: 'ignore' }));
 app.use((err, _req, res, _next) => {
   console.error(err);
   res.status(500).json({ error: 'An unexpected server error occurred.' });
 });
-// Export the Express app for Vercel's serverless function runtime.
-export default app;
-
-// Keep the normal Node.js server for local development and traditional hosting.
-if (process.env.VERCEL !== '1') {
+// Vercel imports the exported app as a serverless function; only listen when run locally.
+if (!IS_VERCEL) {
   const server = app.listen(PORT, () => console.log(`GRE Vocab Machine running at http://localhost:${PORT}`));
-  async function shutdown() {
-    server.close(async () => { await client.close(); process.exit(0); });
-  }
+  const shutdown = () => server.close(async () => { await client.close(); process.exit(0); });
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 }
+export default app;
