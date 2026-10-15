@@ -1054,3 +1054,5 @@ html[data-theme="dark"] .account-form input { border-color:var(--line-strong); }
   .game-options { grid-template-columns:1fr; }
   .feature-header { flex-direction:column; }
 }
+
+.account-dialog [hidden] { display: none !important; }
