@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f7f7f5" id="theme-color-meta">
+  <script>
+    (() => {
+      try {
+        const ui = JSON.parse(localStorage.getItem("vocabularyLearner.ui.v1") || "{}");
+        const theme = ui.theme === "dark" || ui.theme === "light" ? ui.theme : "light";
+        document.documentElement.dataset.theme = theme;
+      } catch {
+        document.documentElement.dataset.theme = "light";
+      }
+    })();
+  </script>
+  <title>Vocabulary Learner</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">V</span>
+        <div>
+          <h1>GRE Vocab Machine</h1>
+          <p id="dataset-meta">Loading vocabulary…</p>
+        </div>
+      </div>
+
+      <nav class="site-nav" aria-label="Main navigation">
+        <a href="review.html">Review</a>
+        <a href="dashboard.html">Dashboard</a>
+        <a href="game.html">Game</a>
+      </nav>
+      <div class="top-actions">
+        <button id="account-button" class="button-secondary account-button" type="button">Sign in</button>
+        <button id="help-button" class="icon-button" type="button" aria-label="Show keyboard shortcuts">?</button>
+        <button id="theme-toggle" class="theme-toggle" type="button" role="switch" aria-checked="false" aria-label="Switch to dark mode" title="Switch to dark mode">
+          <span class="theme-toggle-track" aria-hidden="true">
+            <span class="theme-icon theme-icon-sun">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg>
+            </span>
+            <span class="theme-toggle-thumb"></span>
+            <span class="theme-icon theme-icon-moon">
+              <svg viewBox="0 0 24 24"><path d="M20.2 15.4A8.5 8.5 0 0 1 8.6 3.8 8.5 8.5 0 1 0 20.2 15.4Z"></path></svg>
+            </span>
+          </span>
+        </button>
+      </div>
+    </header>
+
+    <section id="learning-view" class="learning-view">
+      <div class="day-toolbar">
+        <button id="prev-day" class="nav-button" type="button" aria-label="Previous day">←</button>
+
+        <div class="day-picker-wrap">
+          <label for="day-select">Day</label>
+          <select id="day-select" aria-label="Select day"></select>
+        </div>
+
+        <button id="next-day" class="nav-button" type="button" aria-label="Next day">→</button>
+
+        <button id="shuffle-day" class="shuffle-button" type="button" aria-label="Shuffle this day's words" aria-pressed="false" title="Shuffle this day's words">↝</button>
+
+        <div class="day-stats" aria-live="polite">
+          <span id="word-position">1 / 30</span>
+          <span class="dot">·</span>
+          <span id="day-progress">0 learned</span>
+        </div>
+      </div>
+
+      <div class="card-stage" id="card-stage">
+        <div id="card" class="flashcard" role="button" tabindex="0" aria-label="Flashcard. Click to flip.">
+          <span class="card-inner">
+            <span class="card-face card-front">
+              <span class="status-badge" id="status-badge"></span>
+              <span class="word" id="word-front"></span>
+              <span class="card-footer">
+                <span>Click to reveal</span>
+                <span class="card-shortcut">R · G · W</span>
+              </span>
+            </span>
+
+            <span class="card-face card-back">
+              <span id="note-panel" class="secondary-panel">
+                <span class="back-label">Notes</span>
+                <span class="back-word" id="word-back"></span>
+                <div id="default-note-wrap" class="default-note-wrap" hidden>
+                  <div class="default-note-heading">
+                    <span>Default dictionary note</span>
+                    <button id="hide-default-note" class="text-button small-text-button" type="button">Hide</button>
+                  </div>
+                  <p id="default-note-text" class="default-note-text"></p>
+                </div>
+                <label class="personal-note-label" for="note-input">Your personal note</label>
+                <textarea id="note-input" maxlength="2000" placeholder="Add a meaning, mnemonic, example, or anything useful…" aria-label="Note for this word"></textarea>
+                <span class="card-footer">
+                  <span id="note-status">Sign in to save notes</span>
+                  <span>N · edit note</span>
+                </span>
+              </span>
+
+              <span id="dictionary-panel" class="secondary-panel dictionary-panel" hidden>
+                <span class="dictionary-header">
+                  <span class="dictionary-word-row">
+                    <span class="dictionary-word" id="dictionary-word"></span>
+                    <button id="speak-button" class="speaker-button" type="button" aria-label="Hear pronunciation" title="Hear pronunciation (S)">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M4 10v4h4l5 4V6l-5 4H4Z"></path>
+                        <path d="M16 9.5a4 4 0 0 1 0 5"></path>
+                        <path d="M18.5 7a7.5 7.5 0 0 1 0 10"></path>
+                      </svg>
+                    </button>
+                  </span>
+                  <span class="dictionary-pos" id="dictionary-pos"></span>
+                </span>
+
+                <span class="dictionary-definition">
+                  <span class="dictionary-section-label">Definition</span>
+                  <span id="dictionary-definition"></span>
+                </span>
+
+                <span class="dictionary-example" id="dictionary-example-panel" hidden>
+                  <span class="dictionary-section-label">Example</span>
+                  <span id="dictionary-example"></span>
+                </span>
+
+                <span class="dictionary-lists">
+                  <span class="dictionary-list">
+                    <span class="dictionary-section-label">Synonyms</span>
+                    <span id="dictionary-synonyms"></span>
+                  </span>
+                  <span class="dictionary-list">
+                    <span class="dictionary-section-label">Antonyms</span>
+                    <span id="dictionary-antonyms"></span>
+                  </span>
+                </span>
+
+                <span class="dictionary-footer">
+                  <span>Dictionary</span>
+                  <span>D · back to word</span>
+                </span>
+              </span>
+            </span>
+          </span>
+        </div>
+      </div>
+
+      <div class="word-navigation">
+        <button id="prev-word" class="text-button" type="button">← Previous</button>
+        <div id="word-dots" class="word-dots" aria-label="Word progress"></div>
+        <button id="next-word" class="text-button" type="button">Next →</button>
+      </div>
+
+      <div class="keyboard-hint">
+        <span><kbd>←</kbd><kbd>→</kbd> words</span>
+        <span><kbd>R</kbd> not memorized</span>
+        <span><kbd>G</kbd> memorized</span>
+        <span><kbd>W</kbd> reset color</span>
+        <span><kbd>N</kbd> note</span>
+        <span><kbd>D</kbd> dictionary</span>
+        <span><kbd>S</kbd> pronunciation</span>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <dialog id="help-dialog" class="help-dialog">
+    <button id="close-help" class="dialog-close" type="button" aria-label="Close">×</button>
+    <p class="eyebrow">Keyboard</p>
+    <h2>Learn without reaching for the mouse.</h2>
+    <div class="shortcut-list">
+      <div><kbd>←</kbd><span>Previous word</span></div>
+      <div><kbd>→</kbd><span>Next word</span></div>
+      <div><kbd>R</kbd><span>Mark red — not memorized</span></div>
+      <div><kbd>G</kbd><span>Mark green — memorized</span></div>
+      <div><kbd>W</kbd><span>Reset color only</span></div>
+      <div><kbd>N</kbd><span>Open the note</span></div>
+      <div><kbd>D</kbd><span>Open the dictionary</span></div>
+      <div><kbd>S</kbd><span>Hear pronunciation</span></div>
+      <div><kbd>Space</kbd><span>Flip the card</span></div>
+      <div><kbd>Esc</kbd><span>Return to the word</span></div>
+    </div>
+    <p class="dialog-note">Notes and color states are saved to your account when signed in.</p>
+  </dialog>
+
+  <dialog id="account-dialog" class="help-dialog account-dialog">
+    <button id="close-account" class="dialog-close" type="button" aria-label="Close">×</button>
+    <p class="eyebrow">GRE Vocab Machine</p>
+    <h2 id="account-title">Sign in</h2>
+    <p class="account-intro">Create an account to save notes, track learning progress, and play the vocabulary game.</p>
+    <form id="account-form" class="account-form">
+      <label id="identifier-label" for="account-identifier">Email or username</label>
+      <input id="account-identifier" name="identifier" autocomplete="username" required maxlength="254">
+      <div id="username-field" hidden>
+        <label for="account-username">Username (optional)</label>
+        <input id="account-username" name="username" autocomplete="nickname" maxlength="32">
+      </div>
+      <label for="account-password">Password</label>
+      <input id="account-password" name="password" type="password" autocomplete="current-password" required minlength="10" maxlength="128">
+      <p id="account-error" class="account-error" role="alert" hidden></p>
+      <button id="account-submit" class="button-primary" type="submit">Sign in</button>
+    </form>
+    <p class="account-switch"><span id="account-switch-text">Don't have an account?</span> <button id="account-mode-toggle" class="text-button" type="button">Create account</button></p>
+    <button id="sign-out-button" class="button-secondary" type="button" hidden>Sign out</button>
+  </dialog>
+
+  <script src="script.js?v=7"></script>
+</body>
+</html>
