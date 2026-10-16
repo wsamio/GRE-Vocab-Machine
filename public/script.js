@@ -265,7 +265,7 @@
     if (el.themeColorMeta) {
       el.themeColorMeta.setAttribute(
         "content",
-        nextTheme === "dark" ? "#171818" : "#f7f7f5"
+        nextTheme === "dark" ? "#171818" : "#f1ece0"
       );
     }
 

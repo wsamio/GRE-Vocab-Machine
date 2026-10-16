@@ -1,8 +1,8 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650;700&display=swap");
 
 :root {
-  --bg: #f7f7f5;
-  --surface: #ffffff;
+  --bg: #f1ece0;
+  --surface: #faf7ef;
   --text: #171717;
   --muted: #777773;
   --line: #deded9;
@@ -13,6 +13,10 @@
   --red-border: #e9a19b;
   --shadow: 0 24px 70px rgba(0, 0, 0, 0.08);
   --radius: 18px;
+  --grid-size: 28px;
+  --grid-major: 140px;
+  --grid-minor-line: rgba(120, 98, 62, .09);
+  --grid-major-line: rgba(120, 98, 62, .16);
   --cursor-glow: rgba(82, 220, 255, .16);
   --cursor-glow-strong: rgba(82, 220, 255, .08);
   --font: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -29,7 +33,11 @@ body {
   position: relative;
   isolation: isolate;
   background:
-    radial-gradient(circle at 50% -10%, rgba(255,255,255,.95), transparent 42%),
+    radial-gradient(circle at 50% -10%, rgba(255,251,240,.7), transparent 42%),
+    linear-gradient(var(--grid-major-line) 1px, transparent 1px) 0 0 / var(--grid-major) var(--grid-major),
+    linear-gradient(90deg, var(--grid-major-line) 1px, transparent 1px) 0 0 / var(--grid-major) var(--grid-major),
+    linear-gradient(var(--grid-minor-line) 1px, transparent 1px) 0 0 / var(--grid-size) var(--grid-size),
+    linear-gradient(90deg, var(--grid-minor-line) 1px, transparent 1px) 0 0 / var(--grid-size) var(--grid-size),
     var(--bg);
   color: var(--text);
   font-family: var(--font);
@@ -71,6 +79,8 @@ html[data-theme="dark"] {
   --red: #3a2424;
   --red-border: #9a5650;
   --shadow: 0 28px 80px rgba(0, 0, 0, .34);
+  --grid-minor-line: rgba(190, 215, 220, .045);
+  --grid-major-line: rgba(190, 215, 220, .085);
   --cursor-glow: rgba(73, 221, 255, .17);
   --cursor-glow-strong: rgba(73, 221, 255, .09);
 }
@@ -79,6 +89,10 @@ html[data-theme="dark"] body {
   background:
     radial-gradient(circle at 50% -12%, rgba(74, 77, 77, .24), transparent 40%),
     radial-gradient(circle at 50% 42%, rgba(39, 43, 43, .34), transparent 62%),
+    linear-gradient(var(--grid-major-line) 1px, transparent 1px) 0 0 / var(--grid-major) var(--grid-major),
+    linear-gradient(90deg, var(--grid-major-line) 1px, transparent 1px) 0 0 / var(--grid-major) var(--grid-major),
+    linear-gradient(var(--grid-minor-line) 1px, transparent 1px) 0 0 / var(--grid-size) var(--grid-size),
+    linear-gradient(90deg, var(--grid-minor-line) 1px, transparent 1px) 0 0 / var(--grid-size) var(--grid-size),
     var(--bg);
 }
 
@@ -216,7 +230,7 @@ button { color: inherit; }
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: #fff;
+  background: #faf7ef;
   box-shadow: 0 2px 7px rgba(0,0,0,.18);
   transition: transform .28s cubic-bezier(.2,.8,.2,1), background .25s ease, box-shadow .25s ease;
 }
@@ -285,7 +299,7 @@ html[data-theme="dark"] .theme-icon-moon { color: #d7fbff; }
 }
 
 .button-secondary {
-  background: rgba(255,255,255,.65);
+  background: rgba(250,247,239,.65);
   border: 1px solid var(--line);
 }
 
@@ -300,7 +314,7 @@ html[data-theme="dark"] .theme-icon-moon { color: #d7fbff; }
   display: grid;
   place-items: center;
   border: 1px solid var(--line);
-  background: rgba(255,255,255,.65);
+  background: rgba(250,247,239,.65);
   cursor: pointer;
   transition: transform .16s ease, border-color .16s ease, background .16s ease;
 }
@@ -329,7 +343,7 @@ html[data-theme="dark"] .theme-icon-moon { color: #d7fbff; }
   margin-bottom: 24px;
   border: 1px solid var(--line);
   border-radius: 15px;
-  background: white;
+  background: #faf7ef;
   color: var(--muted);
   font-size: 22px;
   box-shadow: 0 8px 30px rgba(0,0,0,.04);
@@ -388,7 +402,7 @@ html[data-theme="dark"] .theme-icon-moon { color: #d7fbff; }
   height: 42px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: rgba(255,255,255,.65);
+  background: rgba(250,247,239,.65);
   color: var(--muted);
   cursor: pointer;
   font-size: 18px;
@@ -553,7 +567,7 @@ html[data-theme="dark"] .shuffle-button.is-active {
   height: 34px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: rgba(255,255,255,.7);
+  background: rgba(250,247,239,.7);
   color: var(--muted);
   cursor: pointer;
   transition: transform .16s ease, border-color .16s ease, color .16s ease, background .16s ease;
@@ -803,7 +817,7 @@ kbd {
   border: 1px solid #d8d8d2;
   border-bottom-width: 2px;
   border-radius: 5px;
-  background: #fff;
+  background: #faf7ef;
   color: #55544f;
   font-size: 9px;
   font-weight: 650;
@@ -818,7 +832,7 @@ kbd {
   padding: 9px 13px;
   border: 1px solid var(--line);
   border-radius: 9px;
-  background: rgba(255,255,255,.94);
+  background: rgba(250,247,239,.94);
   box-shadow: 0 10px 30px rgba(0,0,0,.08);
   color: #4e4d49;
   font-size: 11px;
