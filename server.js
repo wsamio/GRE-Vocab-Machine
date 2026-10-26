@@ -9,6 +9,7 @@ import rateLimit from 'express-rate-limit';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'csv-parse/sync';
+import { buildQuestionDoc } from './lib/questions.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -32,6 +33,10 @@ const users = db.collection('users');
 const words = db.collection('words');
 const progress = db.collection('user_word_progress');
 const games = db.collection('game_sessions');
+const questions = db.collection('word_questions');
+const testActive = db.collection('test_active');
+const testResults = db.collection('test_results');
+const memorize = db.collection('memorize_sessions');
 await Promise.all([
   users.createIndex({ emailLower: 1 }, { unique: true }),
   users.createIndex({ usernameLower: 1 }, { unique: true, sparse: true }),
@@ -41,7 +46,12 @@ await Promise.all([
   games.createIndex({ userId: 1, completedAt: -1 }),
   words.createIndex({ wordId: 1 }, { unique: true }),
   words.createIndex({ dayNumber: 1, order: 1 }),
-  words.createIndex({ wordLower: 1 }, { unique: true })
+  words.createIndex({ wordLower: 1 }, { unique: true }),
+  questions.createIndex({ wordId: 1 }, { unique: true }),
+  questions.createIndex({ dayNumber: 1 }),
+  testActive.createIndex({ userId: 1 }, { unique: true }),
+  testResults.createIndex({ userId: 1, completedAt: -1 }),
+  memorize.createIndex({ userId: 1 }, { unique: true })
 ]);
 
 const appSessionStore = MongoStore.create({
@@ -284,6 +294,184 @@ app.post('/api/game/finish', requireAuth, gameLimiter, async (req, res) => {
   delete req.session.games[gameId];
   res.json({ score, correct, totalQuestions, accuracy, durationSeconds });
 });
+
+
+// ---------------------------------------------------------------------------
+// Memorization mastering + text completion / sentence equivalence tests
+// ---------------------------------------------------------------------------
+const testLimiter = rateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: 'draft-7', legacyHeaders: false });
+const TEST_SIZE = 10;
+const shuffled = list => { const a = [...list]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const sameSet = (a, b) => a.length === b.length && [...a].map(x => x.toLowerCase()).sort().every((x, i) => x === [...b].map(y => y.toLowerCase()).sort()[i]);
+let dayBoundsCache = null;
+async function getBounds() {
+  if (dayBoundsCache) return dayBoundsCache;
+  const [r] = await words.aggregate([{ $group: { _id: null, minDay: { $min: '$dayNumber' }, maxDay: { $max: '$dayNumber' } } }]).toArray();
+  dayBoundsCache = { minDay: r?.minDay || 1, maxDay: r?.maxDay || 1 };
+  return dayBoundsCache;
+}
+async function readRange(body) {
+  const b = await getBounds();
+  const fromDay = Math.floor(Number(body?.fromDay)), toDay = Math.floor(Number(body?.toDay));
+  if (!Number.isFinite(fromDay) || !Number.isFinite(toDay) || fromDay < b.minDay || toDay > b.maxDay || fromDay > toDay) {
+    return { error: `Choose days between ${b.minDay} and ${b.maxDay}, with the first day not after the last.` };
+  }
+  return { fromDay, toDay };
+}
+
+// ----- Memorization -----
+const WORD_FIELDS = { _id: 0, wordId: 1, dayNumber: 1, word: 1, partsOfSpeech: 1, definition: 1, synonyms: 1, antonyms: 1, example: 1, defaultNote: 1 };
+async function memorizePayload(userId, s) {
+  const [docs, prog] = await Promise.all([
+    words.find({ wordId: { $in: s.order } }, { projection: WORD_FIELDS }).toArray(),
+    progress.find({ userId, wordId: { $in: s.order } }).toArray()
+  ]);
+  const byId = new Map(docs.map(d => [d.wordId, d]));
+  const prog$ = new Map(prog.map(p => [p.wordId, p]));
+  return {
+    session: { fromDay: s.fromDay, toDay: s.toDay },
+    words: s.order.map(id => byId.get(id)).filter(Boolean).map(w => {
+      const p = prog$.get(w.wordId);
+      return { ...w, status: p?.status || '', note: p?.note || '', hideDefaultNote: Boolean(p?.hideDefaultNote) };
+    })
+  };
+}
+app.get('/api/memorize', requireAuth, async (req, res) => {
+  const userId = currentUserId(req);
+  const [bounds, s] = await Promise.all([getBounds(), memorize.findOne({ userId })]);
+  res.json({ bounds, ...(s ? await memorizePayload(userId, s) : { session: null, words: [] }) });
+});
+app.post('/api/memorize', requireAuth, testLimiter, async (req, res) => {
+  const range = await readRange(req.body);
+  if (range.error) return res.status(400).json({ error: range.error });
+  const ids = (await words.find({ dayNumber: { $gte: range.fromDay, $lte: range.toDay } }, { projection: { _id: 0, wordId: 1 } }).toArray()).map(w => w.wordId);
+  if (!ids.length) return res.status(404).json({ error: 'No words found in that range.' });
+  const s = { userId: currentUserId(req), fromDay: range.fromDay, toDay: range.toDay, order: shuffled(ids), createdAt: new Date() };
+  await memorize.replaceOne({ userId: s.userId }, s, { upsert: true });
+  res.json({ bounds: await getBounds(), ...(await memorizePayload(s.userId, s)) });
+});
+app.delete('/api/memorize', requireAuth, async (req, res) => {
+  await memorize.deleteOne({ userId: currentUserId(req) });
+  res.json({ ok: true });
+});
+
+// ----- Tests -----
+async function definitionsFor(wordIds) {
+  const list = await words.find({ wordId: { $in: wordIds } }, { projection: { _id: 0, wordId: 1, definition: 1 } }).toArray();
+  return new Map(list.map(w => [w.wordId, w.definition]));
+}
+async function clientTest(doc) {
+  const qById = new Map(doc.questions.map(q => [q.qid, q]));
+  const defs = await definitionsFor(doc.answers.map(a => qById.get(a.qid)?.wordId).filter(Boolean));
+  return {
+    testId: doc.testId, range: doc.range, total: doc.questions.length, startedAt: doc.startedAt,
+    questions: doc.questions.map(({ qid, type, sentence, options, pick }) => ({ qid, type, sentence, options, pick })),
+    answers: doc.answers.map(a => {
+      const q = qById.get(a.qid);
+      return { qid: a.qid, selected: a.selected, correct: a.correct, timeMs: a.timeMs, correctAnswer: q.answer, word: q.word, definition: defs.get(q.wordId) || '' };
+    })
+  };
+}
+app.get('/api/test', requireAuth, async (req, res) => {
+  const doc = await testActive.findOne({ userId: currentUserId(req) });
+  res.json({ bounds: await getBounds(), test: doc ? await clientTest(doc) : null });
+});
+app.post('/api/test/start', requireAuth, testLimiter, async (req, res) => {
+  const userId = currentUserId(req);
+  if (await testActive.findOne({ userId }, { projection: { _id: 1 } })) return res.status(409).json({ error: 'You already have a test in progress. Finish or end it first.' });
+  const range = await readRange(req.body);
+  if (range.error) return res.status(400).json({ error: range.error });
+  const pool = await questions.aggregate([
+    { $match: { dayNumber: { $gte: range.fromDay, $lte: range.toDay }, $or: [{ hasTc: true }, { hasTb: true }] } },
+    { $sample: { size: TEST_SIZE * 2 } }
+  ]).toArray();
+  const picked = [...new Map(pool.map(d => [d.wordId, d])).values()].slice(0, TEST_SIZE);
+  if (picked.length < TEST_SIZE) return res.status(422).json({ error: `Only ${picked.length} questions are available in that range. Choose a wider range of days.` });
+  const qs = picked.map((d, i) => {
+    const type = d.hasTc && d.hasTb ? (Math.random() < 0.5 ? 'text_completion' : 'two_blank') : (d.hasTc ? 'text_completion' : 'two_blank');
+    if (type === 'text_completion') {
+      const item = d.tc[Math.floor(Math.random() * d.tc.length)];
+      return { qid: `q${i + 1}`, type, wordId: d.wordId, word: d.word, sentence: item.sentence, options: shuffled([d.word, ...item.distractors]), answer: [d.word], pick: 1 };
+    }
+    return { qid: `q${i + 1}`, type, wordId: d.wordId, word: d.word, sentence: d.tb.sentence, options: shuffled(d.tb.options), answer: d.tb.correctPair, pick: 2 };
+  });
+  const doc = { userId, testId: new ObjectId().toString(), range: { fromDay: range.fromDay, toDay: range.toDay }, questions: qs, answers: [], startedAt: new Date(), updatedAt: new Date() };
+  try { await testActive.insertOne(doc); }
+  catch (e) { if (e?.code === 11000) return res.status(409).json({ error: 'You already have a test in progress. Finish or end it first.' }); throw e; }
+  res.status(201).json({ bounds: await getBounds(), test: await clientTest(doc) });
+});
+app.post('/api/test/answer', requireAuth, testLimiter, async (req, res) => {
+  const userId = currentUserId(req);
+  const doc = await testActive.findOne({ userId });
+  if (!doc) return res.status(404).json({ error: 'No test in progress.', code: 'NO_TEST' });
+  const q = doc.questions.find(x => x.qid === clean(req.body?.qid, 20));
+  if (!q) return res.status(400).json({ error: 'Question not found.' });
+  const def = (await definitionsFor([q.wordId])).get(q.wordId) || '';
+  const prior = doc.answers.find(a => a.qid === q.qid);
+  if (prior) return res.json({ correct: prior.correct, correctAnswer: q.answer, word: q.word, definition: def, addedToReview: false });
+  const selected = Array.isArray(req.body?.selected) ? req.body.selected.map(v => clean(v, 120)) : [];
+  if (selected.length !== q.pick || new Set(selected.map(s => s.toLowerCase())).size !== q.pick || !selected.every(s => q.options.includes(s))) {
+    return res.status(400).json({ error: q.pick === 2 ? 'Select exactly two answers.' : 'Select one answer.' });
+  }
+  const correct = sameSet(selected, q.answer);
+  const timeMs = Math.min(3600000, Math.max(0, Math.round(Number(req.body?.timeMs) || 0)));
+  const entry = { qid: q.qid, selected, correct, timeMs, answeredAt: new Date() };
+  await testActive.updateOne({ userId, 'answers.qid': { $ne: q.qid } }, { $push: { answers: entry }, $set: { updatedAt: new Date() } });
+  if (!correct) {
+    const now = new Date();
+    await progress.updateOne({ userId, wordId: q.wordId }, { $set: { status: 'red', updatedAt: now }, $setOnInsert: { userId, wordId: q.wordId, createdAt: now } }, { upsert: true });
+  }
+  res.json({ correct, correctAnswer: q.answer, word: q.word, definition: def, addedToReview: !correct });
+});
+app.post('/api/test/finish', requireAuth, testLimiter, async (req, res) => {
+  const userId = currentUserId(req);
+  const doc = await testActive.findOne({ userId });
+  if (!doc) return res.status(404).json({ error: 'No test in progress.', code: 'NO_TEST' });
+  const defs = await definitionsFor(doc.questions.map(q => q.wordId));
+  const details = doc.questions.map((q, i) => {
+    const a = doc.answers.find(x => x.qid === q.qid);
+    return { n: i + 1, type: q.type, word: q.word, sentence: q.sentence, answer: q.answer, definition: defs.get(q.wordId) || '', skipped: !a, selected: a?.selected || [], correct: Boolean(a?.correct), timeMs: a?.timeMs || 0 };
+  });
+  const answered = details.filter(d => !d.skipped);
+  const stat = list => ({ answered: list.length, correct: list.filter(d => d.correct).length, avgTimeMs: list.length ? Math.round(list.reduce((s, d) => s + d.timeMs, 0) / list.length) : 0 });
+  const totalTimeMs = answered.reduce((s, d) => s + d.timeMs, 0);
+  const timed = [...answered].sort((a, b) => a.timeMs - b.timeMs);
+  const report = {
+    range: doc.range, total: details.length, answered: answered.length, skipped: details.length - answered.length,
+    correct: answered.filter(d => d.correct).length,
+    accuracy: answered.length ? Math.round(answered.filter(d => d.correct).length / answered.length * 100) : 0,
+    totalTimeMs, avgTimeMs: answered.length ? Math.round(totalTimeMs / answered.length) : 0,
+    fastest: timed[0] ? { word: timed[0].word, timeMs: timed[0].timeMs } : null,
+    slowest: timed.length ? { word: timed[timed.length - 1].word, timeMs: timed[timed.length - 1].timeMs } : null,
+    byType: { text_completion: stat(answered.filter(d => d.type === 'text_completion')), two_blank: stat(answered.filter(d => d.type === 'two_blank')) },
+    missed: answered.filter(d => !d.correct).map(d => ({ word: d.word, definition: d.definition })),
+    details
+  };
+  if (answered.length) await testResults.insertOne({ userId, testId: doc.testId, completedAt: new Date(), ...report });
+  await testActive.deleteOne({ userId });
+  res.json({ report, saved: answered.length > 0 });
+});
+
+// ----- Test question import (first run only; later refreshes use npm run import:dictionary) -----
+async function ensureQuestions() {
+  if (await questions.estimatedDocumentCount() > 0) return;
+  const fs = await import('node:fs/promises');
+  let csvText;
+  try { csvText = await fs.readFile(path.join(__dirname, 'dictionary.csv'), 'utf8'); }
+  catch { console.warn('dictionary.csv not found; test questions were not imported.'); return; }
+  const rows = parse(csvText.replace(/^\uFEFF/, ''), { columns: true, skip_empty_lines: true, relax_quotes: true, bom: true, trim: true });
+  const docs = [];
+  for (const r of rows) {
+    const word = clean(r.word, 200);
+    if (!word) continue;
+    const dayNumber = Number(r.day_number) || 1;
+    const doc = buildQuestionDoc(r, `${dayNumber}:${word.toLocaleLowerCase('en-US')}`, dayNumber);
+    if (doc) docs.push(doc);
+  }
+  for (let i = 0; i < docs.length; i += 500) await questions.insertMany(docs.slice(i, i + 500), { ordered: false });
+  console.log(`Imported test questions for ${docs.length} words.`);
+}
+if (!IS_VERCEL) await ensureQuestions();
 
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'], index: 'index.html', dotfiles: 'ignore' }));
 app.use((err, _req, res, _next) => {
